@@ -8,6 +8,8 @@
 
 - Shared RPC hosts report `runtimeBuildId`, a content digest of the runtime they loaded at startup (engine files, plugins, flavour, platform), in `get_protocol_info` and `host status`, and `host ensure` reports the `clientRuntimeBuildId` it would launch, so a client can tell two builds of one version apart and see a bundle replaced in place. `senpi host handoff --when idle --operation <id> --if-instance <id> --if-generation <n> --target-build <id>` asks the running host to hand over to the caller's runtime at its next idle point: it stops admitting new work, lets running turns finish, never aborts one, answers `handover_pending` meanwhile, and keeps serving if the successor does not come up. A repeated operation id returns the existing operation.
 
+- RPC clients can retry prompts, steering, and follow-ups with durable client message and turn IDs without duplicating an accepted input. Admissions and prepared queues survive transcript reopen, conflicting payloads are rejected, and queue records and turn events echo the IDs. Hosts advertise `durable_client_message_id` ([desktop#1325](https://github.com/code-yeongyu/omo-desktop-app/issues/1325), [#1971](https://github.com/code-yeongyu/senpi/issues/1971)).
+
 ### Changed
 
 ### Fixed
