@@ -3,15 +3,18 @@ import type { EventEmitter } from "node:events";
 import http from "node:http";
 import { syncBuiltinESMExports } from "node:module";
 import net from "node:net";
+import timers from "node:timers";
 import workerThreads from "node:worker_threads";
 import { Type } from "typebox";
 import { GateInputError } from "./gate-input-error.ts";
 
 export const cleanupSchema = Type.Object({
 	processes: Type.Number(), workers: Type.Number(), sockets: Type.Number(),
-	handles: Type.Number(), subscriptions: Type.Number(), listeners: Type.Number(),
+	handles: Type.Number(), timers: Type.Number(), subscriptions: Type.Number(), listeners: Type.Number(),
 });
 type ResourceKind = "processes" | "workers" | "sockets" | "handles";
+type TimerKind = "setTimeout" | "setInterval" | "setImmediate";
+type OwnedTimer = { readonly timer: object; readonly site: string };
 type OwnedResource = {
 	readonly kind: ResourceKind;
 	readonly emitter: EventEmitter;
@@ -28,13 +31,39 @@ type OwnedResource = {
  */
 export function observeResources() {
 	const owned: OwnedResource[] = [];
+	const ownedTimers: OwnedTimer[] = [];
 	const subscriptions = new Set<Promise<unknown>>();
 	const processListeners = new Map(process.eventNames().map((event) => [event, process.listeners(event)]));
 	const originals = {
 		Worker: workerThreads.Worker, spawn: childProcess.spawn,
 		createServer: http.createServer, connect: net.connect, createConnection: net.createConnection,
 		gateObserver: globalThis.__senpiCodemodeGateObserveResource,
+		setTimeout: globalThis.setTimeout, setInterval: globalThis.setInterval, setImmediate: globalThis.setImmediate,
+		timers: { setTimeout: timers.setTimeout, setInterval: timers.setInterval, setImmediate: timers.setImmediate },
 	};
+	// Timers have no close event. Both Bun and Node expose `_destroyed`, which turns
+	// true only after clear/close or a fired one-shot, so unref() cannot hide polling.
+	const isLive = (entry: OwnedTimer) => Reflect.get(entry.timer, "_destroyed") !== true;
+	function observeTimer<T extends object>(kind: TimerKind, original: T): T {
+		return new Proxy(original, {
+			apply(target, receiver, args) {
+				const timer: unknown = Reflect.apply(target, receiver, args);
+				if (typeof timer !== "object" || timer === null || typeof Reflect.get(timer, "_destroyed") !== "boolean")
+					throw new GateInputError(`${kind} observation`);
+				const frames = (new Error().stack ?? "").split("\n").slice(1).map((frame) => frame.trim());
+				const site = frames.find((frame) => !frame.includes("gate-resources.ts") && !frame.includes("native")) ?? "unknown";
+				ownedTimers.push({ timer, site: `${kind} ${site}` });
+				return timer;
+			},
+		});
+	}
+	const timerObservers = {
+		setTimeout: observeTimer("setTimeout", originals.setTimeout),
+		setInterval: observeTimer("setInterval", originals.setInterval),
+		setImmediate: observeTimer("setImmediate", originals.setImmediate),
+	};
+	Object.assign(globalThis, timerObservers);
+	Object.assign(timers, timerObservers);
 	function track(kind: ResourceKind, emitter: EventEmitter, closeEvent: string): void {
 		if (owned.some((item) => item.emitter === emitter)) return;
 		const completion = Promise.withResolvers<void>();
@@ -118,7 +147,7 @@ export function observeResources() {
 			const count = (kind: ResourceKind) => active.filter((entry) => entry.kind === kind).length;
 			return {
 				processes: count("processes"), workers: count("workers"), sockets: count("sockets"),
-				handles: count("handles"), subscriptions: subscriptions.size,
+				handles: count("handles"), timers: ownedTimers.filter(isLive).length, subscriptions: subscriptions.size,
 				listeners: process.eventNames().reduce((total, event) => {
 					const baseline = [...(processListeners.get(event) ?? [])];
 					return total + process.listeners(event).reduce((extra, listener) => {
@@ -132,8 +161,16 @@ export function observeResources() {
 						.reduce((sum, event) => sum + entry.emitter.listenerCount(event), 0), 0),
 			};
 		},
+		/** Creation sites of timers still live, so a cleanup failure names its timer. */
+		liveTimers(): string[] {
+			return ownedTimers.filter(isLive).map((entry) => entry.site);
+		},
 		restore() {
 			for (const entry of owned) entry.restore();
+			Object.assign(globalThis, {
+				setTimeout: originals.setTimeout, setInterval: originals.setInterval, setImmediate: originals.setImmediate,
+			});
+			Object.assign(timers, originals.timers);
 			globalThis.__senpiCodemodeGateObserveResource = originals.gateObserver;
 			Object.assign(workerThreads, { Worker: originals.Worker });
 			Object.assign(childProcess, { spawn: originals.spawn });

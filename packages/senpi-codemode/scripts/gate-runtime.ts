@@ -192,10 +192,12 @@ async function main(): Promise<void> {
 		if (process.env.SENPI_CODEMODE_GATE_MUTATE !== "leak-kernel") await kernel.close();
 		if (process.env.SENPI_CODEMODE_GATE_MUTATE !== "leak-bridge") await server.close();
 		const cleanup = await resources.counts();
+		const liveTimers = resources.liveTimers().map((site) =>
+			site.replaceAll(`${pathToFileURL(target).href}/`, "").replaceAll(`${target}/`, ""));
 		console.log(`GATE_RUNTIME:${JSON.stringify({
 			helperNames, witnesses, memory,
 			hostRuntime: process.versions.bun === undefined ? "node" : "bun",
-			cleanup,
+			cleanup, liveTimers,
 		})}`);
 	} finally {
 		await cleanupRuntime({
