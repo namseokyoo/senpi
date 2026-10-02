@@ -6,6 +6,8 @@
 
 ### Added
 
+- Settled user questions identify their answering surface in tool results and RPC frames. Extensions can observe `ask-user:closed` once for every terminal outcome, including silent cancellations, without changing existing `ask-user:settled` notifications ([#2533](https://github.com/code-yeongyu/senpi/issues/2533)).
+
 ### Changed
 
 ### Fixed

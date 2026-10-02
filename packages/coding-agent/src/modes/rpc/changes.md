@@ -1,3 +1,23 @@
+## 2026-10-02 - Question answer provenance (senpi#2533)
+
+### What changed
+
+- `packages/coding-agent/src/modes/rpc/rpc-types.ts`: `question_resolved` gains optional `resolvedBy`.
+- `packages/coding-agent/src/modes/rpc/connection-question-bridge.ts`: the winning connection response passes its surface into response construction and broadcasts it; timeout and cancellation do not.
+
+### Why
+
+- `packages/coding-agent/src/modes/rpc/rpc-types.ts`, `packages/coding-agent/src/modes/rpc/connection-question-bridge.ts`: a mirrored question needs the answering surface, not just its outcome.
+
+### Why an extension could not handle it
+
+- `packages/coding-agent/src/modes/rpc/rpc-types.ts`, `packages/coding-agent/src/modes/rpc/connection-question-bridge.ts`: the connection bridge owns response admission and wire frames.
+
+### Expected merge conflict zones
+
+- `packages/coding-agent/src/modes/rpc/rpc-types.ts`: RpcQuestionResolvedEvent.
+- `packages/coding-agent/src/modes/rpc/connection-question-bridge.ts`: response construction and the sequential dialog fallback.
+
 ## 2026-09-30 - An updated client retires a live pre-layout-2 host with no session (senpi#2423)
 
 ### What changed
